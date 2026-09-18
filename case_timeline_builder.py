@@ -103,10 +103,18 @@ def load_events_json(path):
         data = json.load(f)
     events = []
     for e in data:
+        date_value = e["date"]
+        time_value = e.get("time")
+        time_unknown = bool(e.get("time_unknown", e.get("timeSpecified") is False))
+        if time_value and not time_unknown and "T" not in date_value and " " not in date_value:
+            date_value = f"{date_value}T{time_value}"
+        dt = datetime.fromisoformat(date_value)
         events.append({
-            "dt": datetime.fromisoformat(e["date"]),
-            "time_unknown": False,
+            "dt": dt,
+            "time_unknown": time_unknown,
             "note": e["note"].strip(),
+            "type": e.get("type", "Event"),
+            "source": e.get("source", ""),
         })
     return events
 
@@ -124,7 +132,13 @@ def load_events_txt(path, default_year):
                 skipped.append((i, line))
                 continue
             dt, time_unknown, note = parsed
-            events.append({"dt": dt, "time_unknown": time_unknown, "note": note})
+            events.append({
+                "dt": dt,
+                "time_unknown": time_unknown,
+                "note": note,
+                "type": "Investigator note",
+                "source": "Text import",
+            })
     if skipped:
         for i, line in skipped:
             print(f"Warning: line {i} could not be parsed and was skipped: {line!r}")
@@ -138,7 +152,9 @@ def build_timeline(events, gap_hours):
     for i, e in enumerate(events, start=1):
         stamp = e["dt"].strftime("%Y-%m-%d") if e["time_unknown"] else e["dt"].strftime("%Y-%m-%d %H:%M")
         suffix = " (time not specified)" if e["time_unknown"] else ""
-        lines.append(f"**{i}. {stamp}{suffix}** — {e['note']}")
+        source = f" · {e['source']}" if e.get("source") else ""
+        event_type = f" [{e['type']}]" if e.get("type") else ""
+        lines.append(f"**{i}. {stamp}{suffix}**{event_type}{source} — {e['note']}")
         if prev:
             gap = (e["dt"] - prev).total_seconds() / 3600
             if gap >= gap_hours:
